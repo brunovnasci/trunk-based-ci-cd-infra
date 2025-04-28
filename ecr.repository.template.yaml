@@ -1,0 +1,25 @@
+Parameters:
+  ApplicationName:
+    Description: The name of the application
+    Type: String
+    Default: banking-accounts
+
+Resources:
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: true
+      RepositoryName: banking-accounts
+
+Outputs:
+  ECRRepository:
+    Description: The ARN of the ECR repository
+    Value: !GetAtt ECRRepository.Arn
+    Export:
+      Name: !Sub ${ApplicationName}-ecr-repository
+
+  ECRRepositoryUri:
+    Description: The URI of the ECR repository
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub ${ApplicationName}-ecr-repository-uri

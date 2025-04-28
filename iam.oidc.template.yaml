@@ -1,0 +1,92 @@
+Parameters:
+  ClusterName:
+    Description: The name of the ECS cluster
+    Type: String
+    Default: tcc-cluster
+
+  ApplicationName:
+    Description: The name of the application
+    Type: String
+    Default: banking-accounts
+
+  GithubRepositoryName:
+    Description: The name of the application Github repository
+    Type: String
+    Default: brunovnasci/banking-accounts
+
+Resources:
+  GithubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      ClientIdList:
+        - sts.amazonaws.com
+      Url: https://token.actions.githubusercontent.com
+
+  GithubActionsRole:
+    Type: AWS::IAM::Role
+    DependsOn:
+      - GithubOIDCProvider
+    Properties:
+      RoleName: !Sub ${ApplicationName}-github-actions-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GithubOIDCProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${GithubRepositoryName}:*
+      Policies:
+        - PolicyName: !Sub ${ApplicationName}-github-actions-ecr-pull-and-push-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource:
+                  "Fn::ImportValue": !Sub ${ApplicationName}-ecr-repository
+        - PolicyName: !Sub ${ApplicationName}-github-actions-ecs-deploy-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RegisterTaskDefinition
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - "Fn::ImportValue": !Sub ${ApplicationName}-dev-task-role
+                  - "Fn::ImportValue": !Sub ${ApplicationName}-prod-task-role
+                  - "Fn::ImportValue": !Sub ${ClusterName}-task-execution-role
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                Resource:
+                  - "Fn::ImportValue": !Sub ${ApplicationName}-dev-ecs-service
+                  - "Fn::ImportValue": !Sub ${ApplicationName}-prod-ecs-service
+
+Outputs:
+  GithubOIDCProvider:
+    Description: The ARN of the Github Actions OIDC provider
+    Value: !Ref GithubOIDCProvider
+  GithubActionsRole:
+    Description: The ARN of the Github Actions IAM role
+    Value: !Ref GithubActionsRole

@@ -1,0 +1,104 @@
+Parameters:
+  ClusterName:
+    Description: The name of the ECS cluster
+    Type: String
+    Default: tcc-cluster
+
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+    AllowedValues:
+      - dev
+      - prod
+
+  ApplicationName:
+    Description: The name of the application
+    Type: String
+    Default: banking-accounts
+
+Resources:
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ApplicationName}-${EnvironmentName}-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:*
+              StringEquals:
+                aws:SourceAccount: !Sub ${AWS::AccountId}
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: TaskRole
+    Properties:
+      Family: !Sub ${ApplicationName}-${EnvironmentName}
+      Cpu: 256
+      Memory: 400
+      NetworkMode: bridge
+      RuntimePlatform:
+        CpuArchitecture: x86_64
+        OperatingSystemFamily: LINUX
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: hello-world
+          Image: nginx:latest
+          Cpu: 128
+          Memory: 256
+          Essential: true
+          healthCheck:
+            command:
+              - CMD-SHELL
+              - echo "curl -f http://localhost:80 || exit 1"
+            interval: 30
+            retries: 3
+            startPeriod: 60
+            timeout: 5
+          PortMappings:
+            - Name: !Sub ${ApplicationName}-${EnvironmentName}-http-http
+              ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+              AppProtocol: http
+#          LogConfiguration:
+#            LogDriver: awslogs
+#            Options:
+#              awslogs-create-group: true
+#              awslogs-group: !Sub ${ApplicationName}-${EnvironmentName}
+#              awslogs-region: !Sub ${AWS::Region}
+#              awslogs-stream-prefix: !Sub ${ClusterName}
+      ExecutionRoleArn:
+        "Fn::ImportValue": !Sub ${ClusterName}-task-execution-role
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: TaskDefinition
+    Properties:
+      Cluster:
+        "Fn::ImportValue": !Sub ${ClusterName}-cluster-name
+      DesiredCount: 1
+      LaunchType: EC2
+      ServiceName: !Sub ${ApplicationName}-${EnvironmentName}
+      TaskDefinition: !Ref TaskDefinition
+      HealthCheckGracePeriodSeconds: 10
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 0
+
+Outputs:
+  Service:
+    Description: The ARN of the ECS service
+    Value: !Ref ECSService
+    Export:
+      Name: !Sub ${ApplicationName}-${EnvironmentName}-ecs-service
+  TaskRole:
+    Description: The ARN of the role used to start up a ECS task
+    Value: !GetAtt TaskRole.Arn
+    Export:
+      Name: !Sub ${ApplicationName}-${EnvironmentName}-task-role

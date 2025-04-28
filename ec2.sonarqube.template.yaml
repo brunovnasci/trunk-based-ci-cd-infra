@@ -1,0 +1,59 @@
+Parameters:
+  VPC:
+    Description: Choose which VPC this SonarQube should be deployed to
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0ebe8c8d9485e523e
+
+  Subnets:
+    Description: Choose which subnets this SonarQube should be deployed to
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-03b3ea4a7b3c5f6d4
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the EC2 instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: desktop-w11
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: SonarQubeSecurityGroup
+      GroupDescription: SonarQube Security Group
+
+  SonarQubeInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: SecurityGroup
+    Properties:
+      InstanceType: t2.medium
+      ImageId: ami-0d0f28110d16ee7d6
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      KeyName: !Ref KeyName
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo yum update
+          sudo yum upgrade -y
+          sudo yum -y install docker
+          sudo service docker start
+
+          sudo wget -P /sonarqube/extensions/plugins https://github.com/mc1arke/sonarqube-community-branch-plugin/releases/download/1.23.0/sonarqube-community-branch-plugin-1.23.0.jar
+          
+          sudo docker run -d \
+          -p 80:9000 \
+          -v /sonarqube/extensions/plugins:/opt/sonarqube/extensions/plugins \
+          -e SONAR_WEB_JAVAADDITIONALOPTS="-javaagent:/opt/sonarqube/extensions/plugins/sonarqube-community-branch-plugin-1.23.0.jar=web" \
+          -e SONAR_CE_JAVAADDITIONALOPTS="-javaagent:/opt/sonarqube/extensions/plugins/sonarqube-community-branch-plugin-1.23.0.jar=ce" \
+          sonarqube:25.1.0.102122-community
+
+Outputs:
+  InstanceId:
+    Description: The Instance ID
+    Value: !Ref SonarQubeInstance
+  PublicIP:
+    Description: The Public IP address of the EC2 instance
+    Value: !GetAtt SonarQubeInstance.PublicIp
+  PublicDNS:
+    Description: The Public DNS name of the EC2 instance
+    Value: !GetAtt SonarQubeInstance.PublicDnsName
